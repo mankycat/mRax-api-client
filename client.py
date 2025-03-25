@@ -11,21 +11,23 @@ class MedRAXClient:
     def __init__(self, base_url: str = "http://localhost:8000"):
         self.base_url = base_url
         
-    def send_single_image(self, image_path: str) -> Dict:
-        """Send a single image for inference"""
+    def send_single_image(self, image_path: str, user_message: str = None) -> Dict:
+        """Send a single image for inference with optional user message"""
         with open(image_path, 'rb') as f:
             files = {'file': (Path(image_path).name, f)}
-            response = requests.post(f"{self.base_url}/inference", files=files)
+            data = {'user_message': user_message} if user_message else None
+            response = requests.post(f"{self.base_url}/inference", files=files, data=data)
         return response.json()
     
-    def send_batch_images(self, image_paths: List[str]) -> Dict:
-        """Send multiple images for batch inference"""
+    def send_batch_images(self, image_paths: List[str], user_message: str = None) -> Dict:
+        """Send multiple images for batch inference with optional user message"""
         files = []
         for path in image_paths:
             with open(path, 'rb') as f:
                 files.append(('files', (Path(path).name, f)))
         
-        response = requests.post(f"{self.base_url}/batch_inference", files=files)
+        data = {'user_message': user_message} if user_message else None
+        response = requests.post(f"{self.base_url}/batch_inference", files=files, data=data)
         return response.json()
     
     def calculate_confusion_matrix(self, 
@@ -63,10 +65,12 @@ def main():
     # Single image parser
     single_parser = subparsers.add_parser('single')
     single_parser.add_argument('image_path', help='Path to image file')
+    single_parser.add_argument('--user-message', help='Optional message to include with the image')
     
     # Batch images parser
     batch_parser = subparsers.add_parser('batch')
     batch_parser.add_argument('image_paths', nargs='+', help='Paths to image files')
+    batch_parser.add_argument('--user-message', help='Optional message to include with all images')
     batch_parser.add_argument('--ground_truth', nargs='+', 
                             help='Ground truth labels for confusion matrix')
     batch_parser.add_argument('--labels', nargs='+',
@@ -79,11 +83,11 @@ def main():
     client = MedRAXClient()
     
     if args.command == 'single':
-        result = client.send_single_image(args.image_path)
+        result = client.send_single_image(args.image_path, args.user_message)
         print(json.dumps(result, indent=2))
         
     elif args.command == 'batch':
-        result = client.send_batch_images(args.image_paths)
+        result = client.send_batch_images(args.image_paths, args.user_message)
         print(json.dumps(result, indent=2))
         
         if args.ground_truth and args.labels:

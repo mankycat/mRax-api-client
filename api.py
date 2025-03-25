@@ -46,8 +46,8 @@ agent, tools_dict = initialize_agent(
 interface = ChatInterface(agent, tools_dict)
 
 @app.post("/inference")
-async def single_inference(file: UploadFile = File(...)):
-    """Process a single medical image"""
+async def single_inference(file: UploadFile = File(...), user_message: str = None):
+    """Process a single medical image with optional user message"""
     try:
         # Save uploaded file temporarily
         with tempfile.NamedTemporaryFile(delete=False) as temp_file:
@@ -59,6 +59,8 @@ async def single_inference(file: UploadFile = File(...)):
         
         # Get inference results
         messages = [{"role": "user", "content": f"image_path: {temp_path}"}]
+        if user_message:
+            messages.append({"role": "user", "content": user_message})
         response = agent.workflow.invoke(
             {"messages": messages},
             {"configurable": {"thread_id": str(time.time())}}
@@ -123,8 +125,8 @@ async def single_inference(file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/batch_inference") 
-async def batch_inference(files: List[UploadFile] = File(...)):
-    """Process multiple medical images"""
+async def batch_inference(files: List[UploadFile] = File(...), user_message: str = None):
+    """Process multiple medical images with optional user message"""
     results = []
     for file in files:
         try:
@@ -138,6 +140,8 @@ async def batch_inference(files: List[UploadFile] = File(...)):
             
             # Get inference results
             messages = [{"role": "user", "content": f"image_path: {temp_path}"}]
+            if user_message:
+                messages.append({"role": "user", "content": user_message})
             response = agent.workflow.invoke(
                 {"messages": messages},
                 {"configurable": {"thread_id": str(time.time())}}
