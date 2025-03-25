@@ -67,14 +67,32 @@ async def single_inference(file: UploadFile = File(...)):
         # Clean up
         Path(temp_path).unlink()
         
-        return JSONResponse({
-            "status": "success",
-            "result": {
-                "content": response.content,
-                "additional_kwargs": response.additional_kwargs
-            },
-            "display_image": display_path
-        })
+        import logging
+        logging.basicConfig(level=logging.INFO)
+        logger = logging.getLogger(__name__)
+        
+        try:
+            logger.info(f"Response type: {type(response)}")
+            logger.info(f"Response attributes: {dir(response)}")
+            
+            if hasattr(response, 'content'):
+                result_data = {
+                    "content": response.content,
+                    "additional_kwargs": getattr(response, 'additional_kwargs', {})
+                }
+            else:
+                result_data = dict(response) if hasattr(response, '__dict__') else str(response)
+                logger.warning(f"Unexpected response type: {result_data}")
+
+            return JSONResponse({
+                "status": "success", 
+                "result": result_data,
+                "display_image": display_path
+            })
+            
+        except Exception as e:
+            logger.error(f"Error processing response: {str(e)}")
+            raise HTTPException(status_code=500, detail=str(e))
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -100,14 +118,31 @@ async def batch_inference(files: List[UploadFile] = File(...)):
                 {"configurable": {"thread_id": str(time.time())}}
             )
             
-            results.append({
-                "filename": file.filename,
-                "result": {
-                    "content": response.content,
-                    "additional_kwargs": response.additional_kwargs
-                },
-                "display_image": display_path
-            })
+            try:
+                logger.info(f"Batch response type: {type(response)}")
+                logger.info(f"Batch response attributes: {dir(response)}")
+                
+                if hasattr(response, 'content'):
+                    result_data = {
+                        "content": response.content,
+                        "additional_kwargs": getattr(response, 'additional_kwargs', {})
+                    }
+                else:
+                    result_data = dict(response) if hasattr(response, '__dict__') else str(response)
+                    logger.warning(f"Unexpected batch response type: {result_data}")
+
+                results.append({
+                    "filename": file.filename,
+                    "result": result_data,
+                    "display_image": display_path
+                })
+                
+            except Exception as e:
+                logger.error(f"Error processing batch response: {str(e)}")
+                results.append({
+                    "filename": file.filename,
+                    "error": f"Response processing error: {str(e)}"
+                })
             
             # Clean up
             Path(temp_path).unlink()
