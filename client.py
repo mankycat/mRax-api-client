@@ -11,7 +11,7 @@ import json
 import os
 
 class MedRAXClient:
-    def __init__(self, base_url: str = "http://116.50.47.34:58585"):
+    def __init__(self, base_url: str = "http://localhost:8585"):
         self.base_url = base_url
         
     def send_single_image(self, image_path: str, user_message: str = None) -> Dict:
