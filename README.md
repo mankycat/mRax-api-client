@@ -39,10 +39,17 @@ python client.py batch path/to/images/ --recursive
 # With user message
 python client.py batch path/to/images/ --user-message "Analyze for pneumothorax"
 
-# With Excel ground truth
+# With Excel ground truth (basic keyword matching)
 python client.py batch path/to/images/ \
   --ground_truth_excel ground_truth.xlsx \
   --labels "Normal" "Abnormal"
+
+# With OpenAI API for better classification
+python client.py batch path/to/images/ \
+  --ground_truth_excel ground_truth.xlsx \
+  --labels "Normal" "Abnormal" \
+  --openai-api-key "your_api_key_here" \
+  --openai-model "gpt-4"
 ```
 
 ### Confusion Matrix Reports
@@ -118,9 +125,12 @@ python client.py health
 ## Confusion Matrix
 
 When providing ground truth labels and class labels, the client will:
-1. Generate a confusion matrix
-2. Save it as `confusion_matrix.png`
-3. Return the matrix data in JSON format
+1. Parse AI responses to determine Normal/Abnormal classification
+   - Uses OpenAI API if --openai-api-key provided
+   - Falls back to keyword matching otherwise
+2. Generate a confusion matrix
+3. Save it as `confusion_matrix.png`
+4. Return the matrix data in JSON format
 
 Example output:
 ```json

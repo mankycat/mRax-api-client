@@ -11,8 +11,14 @@ import json
 import os
 
 class MedRAXClient:
-    def __init__(self, base_url: str = "http://localhost:8585"):
+    def __init__(self, base_url: str = "http://0.0.0.0:8585", 
+                openai_api_key: str = None,
+                openai_endpoint: str = "https://api.openai.com/v1/chat/completions",
+                openai_model: str = "gpt-4o-mini"):
         self.base_url = base_url
+        self.openai_api_key = openai_api_key
+        self.openai_endpoint = openai_endpoint
+        self.openai_model = openai_model
         
     def send_single_image(self, image_path: str, user_message: str = None) -> Dict:
         """Send a single image for inference with optional user message"""
@@ -52,6 +58,43 @@ class MedRAXClient:
                 ground_truth[row['SCHE_NO']] = row['REP']
         return ground_truth
 
+    def parse_ai_message(self, message: str) -> str:
+        """Parse AI message to determine Normal/Abnormal classification"""
+        if not self.openai_api_key:
+            # Fallback to simple keyword matching if OpenAI not configured
+            message_lower = message.lower()
+            if "normal" in message_lower:
+                return "Normal"
+            elif "abnormal" in message_lower:
+                return "Abnormal"
+            return "Unknown"
+        
+        # Use OpenAI API for more accurate classification
+        headers = {
+            "Authorization": f"Bearer {self.openai_api_key}",
+            "Content-Type": "application/json"
+        }
+        prompt = f"""
+        Analyze this radiology report and classify it as either 'Normal' or 'Abnormal':
+        {message}
+        
+        Respond ONLY with either 'Normal' or 'Abnormal', nothing else.
+        """
+        
+        data = {
+            "model": self.openai_model,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0.0
+        }
+        
+        try:
+            response = requests.post(self.openai_endpoint, headers=headers, json=data)
+            response.raise_for_status()
+            return response.json()["choices"][0]["message"]["content"].strip()
+        except Exception as e:
+            print(f"OpenAI API error: {e}")
+            return "Unknown"
+
     def calculate_confusion_matrix(self, 
                                  predictions: List[Dict], 
                                  ground_truth: Dict[str, str],
@@ -65,7 +108,8 @@ class MedRAXClient:
         for pred in predictions:
             filename = pred['filename']
             sche_no = Path(filename).stem
-            pred_label = pred['result']['messages'][-1]['content']
+            ai_message = pred['result']['messages'][-1]['content']
+            pred_label = self.parse_ai_message(ai_message)
             
             if sche_no in ground_truth:
                 y_true.append(ground_truth[sche_no])
@@ -124,12 +168,24 @@ def main():
                             help='Excel file containing ground truth labels')
     batch_parser.add_argument('--labels', nargs='+',
                             help='Class labels for confusion matrix')
+    batch_parser.add_argument('--openai-api-key',
+                            help='OpenAI API key for enhanced classification')
+    batch_parser.add_argument('--openai-endpoint',
+                            help='OpenAI API endpoint',
+                            default="https://api.openai.com/v1/chat/completions")
+    batch_parser.add_argument('--openai-model',
+                            help='OpenAI model name',
+                            default="gpt-4o-mini")
     
     # Health check parser
     health_parser = subparsers.add_parser('health')
     
     args = parser.parse_args()
-    client = MedRAXClient()
+    client = MedRAXClient(
+        openai_api_key=args.openai_api_key,
+        openai_endpoint=args.openai_endpoint,
+        openai_model=args.openai_model
+    )
     
     if args.command == 'single':
         result = client.send_single_image(args.image_path, args.user_message)
