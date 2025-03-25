@@ -76,23 +76,30 @@ async def single_inference(file: UploadFile = File(...)):
             logger.info(f"Response attributes: {dir(response)}")
             
             def process_message(msg):
-                if hasattr(msg, 'content'):
-                    result = {
-                        "content": msg.content,
-                        "type": type(msg).__name__
-                    }
-                    if hasattr(msg, 'additional_kwargs'):
-                        result["additional_kwargs"] = {
-                            k: v for k, v in msg.additional_kwargs.items()
-                            if isinstance(v, (str, int, float, bool, dict, list)) or v is None
+                try:
+                    if hasattr(msg, 'content'):
+                        result = {
+                            "content": msg.content,
+                            "type": type(msg).__name__
                         }
-                    return result
-                elif isinstance(msg, (dict, list, str, int, float, bool)) or msg is None:
-                    return msg
-                elif hasattr(msg, '__dict__'):
-                    return {k: process_message(v) for k, v in msg.__dict__.items()}
-                else:
-                    return str(msg)
+                        if hasattr(msg, 'additional_kwargs'):
+                            result["additional_kwargs"] = {
+                                k: v for k, v in msg.additional_kwargs.items()
+                                if isinstance(v, (str, int, float, bool, dict, list)) or v is None
+                            }
+                        return result
+                    elif isinstance(msg, (dict, list)):
+                        return {k: process_message(v) for k, v in msg.items()} if isinstance(msg, dict) \
+                               else [process_message(v) for v in msg]
+                    elif isinstance(msg, (str, int, float, bool)) or msg is None:
+                        return msg
+                    elif hasattr(msg, '__dict__'):
+                        return {k: process_message(v) for k, v in msg.__dict__.items()}
+                    else:
+                        return str(msg)
+                except Exception as e:
+                    logger.error(f"Error processing message: {str(e)}")
+                    return {"error": str(e), "original_type": type(msg).__name__}
 
             if isinstance(response, dict):
                 processed = {k: process_message(v) for k, v in response.items()}
