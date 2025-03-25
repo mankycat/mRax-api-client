@@ -75,18 +75,29 @@ async def single_inference(file: UploadFile = File(...)):
             logger.info(f"Response type: {type(response)}")
             logger.info(f"Response attributes: {dir(response)}")
             
-            if hasattr(response, 'content'):
-                result_data = {
-                    "content": response.content,
-                    "additional_kwargs": getattr(response, 'additional_kwargs', {})
-                }
-            else:
-                result_data = dict(response) if hasattr(response, '__dict__') else str(response)
-                logger.warning(f"Unexpected response type: {result_data}")
+            def process_message(msg):
+                if hasattr(msg, 'content'):
+                    return {
+                        "content": msg.content,
+                        "additional_kwargs": getattr(msg, 'additional_kwargs', {}),
+                        "type": type(msg).__name__
+                    }
+                elif isinstance(msg, (dict, list, str, int, float, bool)):
+                    return msg
+                else:
+                    return str(msg)
 
+            if isinstance(response, dict):
+                processed = {k: process_message(v) for k, v in response.items()}
+            elif hasattr(response, '__dict__'):
+                processed = process_message(response)
+            else:
+                processed = str(response)
+
+            logger.info(f"Processed response: {processed}")
             return JSONResponse({
-                "status": "success", 
-                "result": result_data,
+                "status": "success",
+                "result": processed,
                 "display_image": display_path
             })
             
@@ -122,18 +133,17 @@ async def batch_inference(files: List[UploadFile] = File(...)):
                 logger.info(f"Batch response type: {type(response)}")
                 logger.info(f"Batch response attributes: {dir(response)}")
                 
-                if hasattr(response, 'content'):
-                    result_data = {
-                        "content": response.content,
-                        "additional_kwargs": getattr(response, 'additional_kwargs', {})
-                    }
+                if isinstance(response, dict):
+                    processed = {k: process_message(v) for k, v in response.items()}
+                elif hasattr(response, '__dict__'):
+                    processed = process_message(response)
                 else:
-                    result_data = dict(response) if hasattr(response, '__dict__') else str(response)
-                    logger.warning(f"Unexpected batch response type: {result_data}")
+                    processed = str(response)
 
+                logger.info(f"Processed batch response: {processed}")
                 results.append({
                     "filename": file.filename,
-                    "result": result_data,
+                    "result": processed,
                     "display_image": display_path
                 })
                 
