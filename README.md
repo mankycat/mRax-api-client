@@ -20,19 +20,41 @@ The server will run on `http://localhost:8000`
 
 ### Single Image Inference
 ```bash
+# Basic usage
 python client.py single path/to/image.jpg
+
+# With user message
+python client.py single path/to/image.jpg \
+  --user-message "Please focus on the lung area"
 ```
 
 ### Batch Image Inference
 ```bash
+# Basic usage  
 python client.py batch path/to/image1.jpg path/to/image2.jpg
+
+# With user message
+python client.py batch path/to/image1.jpg path/to/image2.jpg \
+  --user-message "Analyze for pneumothorax"
 ```
 
-### With Confusion Matrix Calculation
+### Confusion Matrix Parameters
+
+When calculating confusion matrix, two parameters are required:
+
+1. `--ground_truth`: The actual/true labels for each image in order
+   - Must match number of images
+   - Example: `--ground_truth "Normal" "Abnormal"`
+
+2. `--labels`: The complete set of possible class labels  
+   - Defines matrix rows/columns
+   - Example: `--labels "Normal" "Abnormal" "Borderline"`
+
+Example with both:
 ```bash
 python client.py batch path/to/image1.jpg path/to/image2.jpg \
   --ground_truth "Normal" "Abnormal" \
-  --labels "Normal" "Abnormal"
+  --labels "Normal" "Abnormal" "Borderline"
 ```
 
 ### Health Check
