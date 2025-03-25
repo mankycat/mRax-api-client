@@ -47,13 +47,13 @@ app = FastAPI(title="MedRAX API",
 # Initialize agent (same as main.py)
 selected_tools = [
     "ImageVisualizerTool",
-    "DicomProcessorTool", 
+    # "DicomProcessorTool", 
     "ChestXRayClassifierTool",
     "ChestXRaySegmentationTool",
     "ChestXRayReportGeneratorTool",
     "XRayVQATool"
-    # "LlavaMedTool",
-    # "XRayPhraseGroundingTool",
+    "LlavaMedTool",
+    "XRayPhraseGroundingTool",
     # "ChestXRayGeneratorTool",
 ]
 

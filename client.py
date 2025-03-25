@@ -25,49 +25,121 @@ class MedRAXClient:
         with open(image_path, 'rb') as f:
             files = {'file': (Path(image_path).name, f)}
             data = {'user_message': user_message} if user_message else None
-            response = requests.post(f"{self.base_url}/inference", files=files, data=data)
-        return response.json()
+            try:
+                response = requests.post(f"{self.base_url}/inference", files=files, data=data)
+                response.raise_for_status()
+                return response.json()
+            except requests.exceptions.RequestException as e:
+                print(f"[ERROR] Failed to process image {image_path}: {e}")
+                return {
+                    "status": "failed",
+                    "error": str(e),
+                    "filename": image_path
+                }
     
     def send_batch_images(self, image_paths: List[str], user_message: str = None) -> Dict:
         """Send multiple images for batch inference with optional user message"""
-        files = []
-        file_handles = []
+        results = []
+        temp_files = []
+        
         try:
+            # First prepare all files and store their content
             for path in image_paths:
-                f = open(path, 'rb')
-                file_handles.append(f)
-                files.append(('files', (Path(path).name, f)))
+                try:
+                    with open(path, 'rb') as f:
+                        content = f.read()
+                        temp_files.append(('files', (str(Path(path).absolute()), content)))
+                except Exception as e:
+                    print(f"[ERROR] Failed to open {path}: {e}")
+                    results.append({
+                        "filename": path,
+                        "status": "failed",
+                        "error": str(e)
+                    })
             
+            if not temp_files:
+                return {"status": "failed", "results": results}
+                
+            # Make the request with all file contents
             data = {'user_message': user_message} if user_message else None
-            response = requests.post(f"{self.base_url}/batch_inference", files=files, data=data)
-            return response.json()
-        finally:
-            for f in file_handles:
-                f.close()
+            response = requests.post(f"{self.base_url}/batch_inference", files=temp_files, data=data)
+            response.raise_for_status()
+            batch_result = response.json()
+            
+            # Merge batch results with any individual failures
+            if "results" in batch_result:
+                batch_result["results"].extend(results)
+            return batch_result
+            
+        except requests.exceptions.RequestException as e:
+            print(f"[ERROR] Batch inference failed: {e}")
+            return {
+                "status": "failed",
+                "error": str(e),
+                "results": results
+            }
     
     def find_png_files(self, root_dir: str) -> List[str]:
         """Recursively find all PNG files in directory and subdirectories"""
         return glob.glob(os.path.join(root_dir, '**', '*.png'), recursive=True)
 
     def load_ground_truth(self, excel_path: str) -> Dict[str, str]:
-        """Load ground truth labels from Excel file"""
+        """Load ground truth labels from Excel file and translate to English"""
         df = pd.read_excel(excel_path)
         ground_truth = {}
+        translation = {
+            '正常': 'Normal',
+            '異常': 'Abnormal'
+        }
         for _, row in df.iterrows():
             if 'SCHE_NO' in row and 'REP' in row:
-                ground_truth[row['SCHE_NO']] = row['REP']
+                # Convert SCHE_NO to string and strip any whitespace
+                sche_no = str(row['SCHE_NO']).strip()
+                # Translate Chinese labels to English
+                ground_truth[sche_no] = translation.get(row['REP'], row['REP'])
+        print(f"[DEBUG] Loaded ground truth: {ground_truth}")
         return ground_truth
 
     def parse_ai_message(self, message: str) -> str:
         """Parse AI message to determine Normal/Abnormal classification"""
-        if not self.openai_api_key:
-            # Fallback to simple keyword matching if OpenAI not configured
-            message_lower = message.lower()
-            if "normal" in message_lower:
+        print(f"\n[DEBUG] Parsing AI message: {message[:200]}...")  # Log first 200 chars
+        
+        # First check for explicit "Impression" section
+        if "### Conclusion" in message or "### Summary" in message or "IMPRESSION:" in message:
+            impression_section = message.split("### Conclusion")[-1] if "### Conclusion" in message else message
+            impression_section = impression_section.split("### Summary")[-1] if "### Summary" in message else impression_section
+            impression_section = impression_section.split("IMPRESSION:")[-1] if "IMPRESSION:" in message else impression_section
+            
+            if "no acute" in impression_section.lower() or "normal" in impression_section.lower():
+                print("[DEBUG] Found normal impression in conclusion")
                 return "Normal"
-            elif "abnormal" in message_lower:
+            elif "abnormal" in impression_section.lower():
+                print("[DEBUG] Found abnormal impression in conclusion")
                 return "Abnormal"
-            return "Unknown"
+        
+        # Fallback to probability analysis
+        if "Probability" in message or "probability" in message:
+            high_prob_count = sum(1 for line in message.split('\n') 
+                                if any(x in line.lower() for x in ['high likelihood', 'moderate likelihood'])
+                                and float(line.split(':')[-1].strip().split()[0]) > 0.5)
+            if high_prob_count > 1:
+                print(f"[DEBUG] Found {high_prob_count} high probability pathologies")
+                return "Abnormal"
+            else:
+                print("[DEBUG] No significant pathologies found")
+                return "Normal"
+                
+        # Final fallback to simple keyword matching
+        message_lower = message.lower()
+        if "normal" in message_lower and "abnormal" not in message_lower:
+            print("[DEBUG] Keyword match: Normal")
+            return "Normal"
+        elif "abnormal" in message_lower:
+            print("[DEBUG] Keyword match: Abnormal")
+            return "Abnormal"
+            
+        # print("[DEBUG] No clear classification found")
+        # return "Unknown"
         
         # Use OpenAI API for more accurate classification
         headers = {
@@ -75,10 +147,10 @@ class MedRAXClient:
             "Content-Type": "application/json"
         }
         prompt = f"""
-        Analyze this radiology report and classify it as either 'Normal' or 'Abnormal':
+        Analyze this radiology report and classify it as either 'Normal', 'Abnormal' or 'Unknown':
         {message}
         
-        Respond ONLY with either 'Normal' or 'Abnormal', nothing else.
+        Respond ONLY with either 'Normal', 'Abnormal' or 'Unknown', nothing else.
         """
         
         data = {
@@ -100,25 +172,61 @@ class MedRAXClient:
                                  ground_truth: Dict[str, str],
                                  labels: Optional[List[str]] = None) -> Dict:
         """Calculate and visualize confusion matrix with detailed Excel report"""
+        print(f"\n[DEBUG] Calculating confusion matrix with {len(predictions)} predictions")
+        print(f"[DEBUG] Ground truth keys: {list(ground_truth.keys())}")
+        print(f"[DEBUG] Labels: {labels}")
+        
         # Extract true and predicted labels
         y_true = []
         y_pred = []
         report_data = []
         
-        for pred in predictions:
+        for i, pred in enumerate(predictions):
             filename = pred['filename']
-            sche_no = Path(filename).stem
+            full_path = Path(filename).absolute()
+            path_parts = full_path.parts
+            print(f"\n[DEBUG] Processing prediction {i+1}/{len(predictions)}")
+            print(f"[DEBUG] Full path: {full_path}")
+            print(f"[DEBUG] Path parts: {path_parts}")
+            
+            # Extract SCHE_NO from path components (e.g. .../11403050086/A24c5d14.png)
+            sche_no = None
+            for part in path_parts:
+                if part.isdigit() and len(part) >= 8:  # SCHE_NO appears to be 11 digits
+                    sche_no = part
+                    print(f"[DEBUG] Extracted SCHE_NO from path: {sche_no}")
+                    break
+            
+            if not sche_no:
+                print(f"[ERROR] Could not extract SCHE_NO from: {filename}")
+                continue
+                
+            print(f"[DEBUG] Using SCHE_NO: {sche_no}")
+            
+            # Get AI message and parse label
             ai_message = pred['result']['messages'][-1]['content']
             pred_label = self.parse_ai_message(ai_message)
+            print(f"[DEBUG] AI message snippet: {ai_message[:200]}...")
+            print(f"[DEBUG] Predicted label: {pred_label}")
             
+            # Match with ground truth
             if sche_no in ground_truth:
-                y_true.append(ground_truth[sche_no])
+                true_label = ground_truth[sche_no]
+                y_true.append(true_label)
                 y_pred.append(pred_label)
                 report_data.append({
                     'File': filename,
-                    'Ground Truth': ground_truth[sche_no],
-                    'Prediction': pred_label
+                    'SCHE_NO': sche_no,
+                    'Ground Truth': true_label,
+                    'Prediction': pred_label,
+                    'AI Message': ai_message[:500] + '...' if len(ai_message) > 500 else ai_message
                 })
+                print(f"[DEBUG] Matched ground truth: {true_label}")
+                print(f"[DEBUG] Current y_true: {y_true}")
+                print(f"[DEBUG] Current y_pred: {y_pred}")
+            else:
+                print(f"[ERROR] SCHE_NO {sche_no} not found in ground truth")
+                print(f"[DEBUG] Available ground truth keys: {list(ground_truth.keys())}")
 
         # Generate confusion matrix
         cm = confusion_matrix(y_true, y_pred, labels=labels)
