@@ -3,6 +3,7 @@ from fastapi.responses import JSONResponse
 from typing import List
 import base64
 import tempfile
+import time
 from pathlib import Path
 from interface import ChatInterface
 from main import initialize_agent
@@ -19,6 +20,9 @@ selected_tools = [
     "ChestXRaySegmentationTool",
     "ChestXRayReportGeneratorTool",
     "XRayVQATool"
+    # "LlavaMedTool",
+    # "XRayPhraseGroundingTool",
+    # "ChestXRayGeneratorTool",
 ]
 
 openai_kwargs = {}
@@ -33,7 +37,7 @@ agent, tools_dict = initialize_agent(
     model_dir="/model-weights",
     temp_dir="temp",
     device="cuda",
-    model="gpt-4o",
+    model="gpt-4o-mini",
     temperature=0.7,
     top_p=0.95,
     openai_kwargs=openai_kwargs
@@ -65,7 +69,10 @@ async def single_inference(file: UploadFile = File(...)):
         
         return JSONResponse({
             "status": "success",
-            "result": response,
+            "result": {
+                "content": response.content,
+                "additional_kwargs": response.additional_kwargs
+            },
             "display_image": display_path
         })
         
@@ -95,7 +102,10 @@ async def batch_inference(files: List[UploadFile] = File(...)):
             
             results.append({
                 "filename": file.filename,
-                "result": response,
+                "result": {
+                    "content": response.content,
+                    "additional_kwargs": response.additional_kwargs
+                },
                 "display_image": display_path
             })
             
@@ -120,4 +130,4 @@ async def health_check():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8585)
