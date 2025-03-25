@@ -30,32 +30,40 @@ python client.py single path/to/image.jpg \
 
 ### Batch Image Inference
 ```bash
-# Basic usage  
-python client.py batch path/to/image1.jpg path/to/image2.jpg
+# Single directory scan
+python client.py batch path/to/images/
+
+# Recursive directory scan
+python client.py batch path/to/images/ --recursive
 
 # With user message
-python client.py batch path/to/image1.jpg path/to/image2.jpg \
-  --user-message "Analyze for pneumothorax"
+python client.py batch path/to/images/ --user-message "Analyze for pneumothorax"
+
+# With Excel ground truth
+python client.py batch path/to/images/ \
+  --ground_truth_excel ground_truth.xlsx \
+  --labels "Normal" "Abnormal"
 ```
 
-### Confusion Matrix Parameters
+### Confusion Matrix Reports
 
-When calculating confusion matrix, two parameters are required:
+When using Excel ground truth, the client will generate:
+1. `confusion_matrix.png` - Visual matrix plot
+2. `confusion_matrix_report.xlsx` - Detailed report with:
+   - File paths
+   - Ground truth labels
+   - Predicted labels
 
-1. `--ground_truth`: The actual/true labels for each image in order
-   - Must match number of images
-   - Example: `--ground_truth "Normal" "Abnormal"`
+The Excel ground truth file should contain:
+- `SCHE_NO` column with image identifiers (filename stems)
+- `REP` column with ground truth labels
 
-2. `--labels`: The complete set of possible class labels  
-   - Defines matrix rows/columns
-   - Example: `--labels "Normal" "Abnormal" "Borderline"`
-
-Example with both:
-```bash
-python client.py batch path/to/image1.jpg path/to/image2.jpg \
-  --ground_truth "Normal" "Abnormal" \
-  --labels "Normal" "Abnormal" "Borderline"
-```
+Example Excel format:
+| SCHE_NO     | REP  |
+|-------------|------|
+| 11403020401 | Abnormal |
+| 11403050064 | Abnormal |
+| 11403050075 | Normal |
 
 ### Health Check
 ```bash
