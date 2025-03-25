@@ -11,7 +11,7 @@ import json
 import os
 
 class MedRAXClient:
-    def __init__(self, base_url: str = "http://localhost:8000"):
+    def __init__(self, base_url: str = "http://116.50.47.34:58585"):
         self.base_url = base_url
         
     def send_single_image(self, image_path: str, user_message: str = None) -> Dict:
@@ -25,13 +25,19 @@ class MedRAXClient:
     def send_batch_images(self, image_paths: List[str], user_message: str = None) -> Dict:
         """Send multiple images for batch inference with optional user message"""
         files = []
-        for path in image_paths:
-            with open(path, 'rb') as f:
+        file_handles = []
+        try:
+            for path in image_paths:
+                f = open(path, 'rb')
+                file_handles.append(f)
                 files.append(('files', (Path(path).name, f)))
-        
-        data = {'user_message': user_message} if user_message else None
-        response = requests.post(f"{self.base_url}/batch_inference", files=files, data=data)
-        return response.json()
+            
+            data = {'user_message': user_message} if user_message else None
+            response = requests.post(f"{self.base_url}/batch_inference", files=files, data=data)
+            return response.json()
+        finally:
+            for f in file_handles:
+                f.close()
     
     def find_png_files(self, root_dir: str) -> List[str]:
         """Recursively find all PNG files in directory and subdirectories"""

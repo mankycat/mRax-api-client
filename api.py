@@ -8,6 +8,38 @@ from pathlib import Path
 from interface import ChatInterface
 from main import initialize_agent
 import os
+import logging
+
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+def process_message(msg):
+    """Recursively process message objects into serializable format"""
+    try:
+        if hasattr(msg, 'content'):
+            result = {
+                "content": msg.content,
+                "type": type(msg).__name__
+            }
+            if hasattr(msg, 'additional_kwargs'):
+                result["additional_kwargs"] = {
+                    k: v for k, v in msg.additional_kwargs.items()
+                    if isinstance(v, (str, int, float, bool, dict, list)) or v is None
+                }
+            return result
+        elif isinstance(msg, (dict, list)):
+            return {k: process_message(v) for k, v in msg.items()} if isinstance(msg, dict) \
+                   else [process_message(v) for v in msg]
+        elif isinstance(msg, (str, int, float, bool)) or msg is None:
+            return msg
+        elif hasattr(msg, '__dict__'):
+            return {k: process_message(v) for k, v in msg.__dict__.items()}
+        else:
+            return str(msg)
+    except Exception as e:
+        logger.error(f"Error processing message: {str(e)}")
+        return {"error": str(e), "original_type": type(msg).__name__}
 
 app = FastAPI(title="MedRAX API", 
               description="REST API for MedRAX medical imaging analysis")
@@ -69,40 +101,10 @@ async def single_inference(file: UploadFile = File(...), user_message: str = Non
         # Clean up
         Path(temp_path).unlink()
         
-        import logging
-        logging.basicConfig(level=logging.INFO)
-        logger = logging.getLogger(__name__)
-        
         try:
             logger.info(f"Response type: {type(response)}")
             logger.info(f"Response attributes: {dir(response)}")
             
-            def process_message(msg):
-                try:
-                    if hasattr(msg, 'content'):
-                        result = {
-                            "content": msg.content,
-                            "type": type(msg).__name__
-                        }
-                        if hasattr(msg, 'additional_kwargs'):
-                            result["additional_kwargs"] = {
-                                k: v for k, v in msg.additional_kwargs.items()
-                                if isinstance(v, (str, int, float, bool, dict, list)) or v is None
-                            }
-                        return result
-                    elif isinstance(msg, (dict, list)):
-                        return {k: process_message(v) for k, v in msg.items()} if isinstance(msg, dict) \
-                               else [process_message(v) for v in msg]
-                    elif isinstance(msg, (str, int, float, bool)) or msg is None:
-                        return msg
-                    elif hasattr(msg, '__dict__'):
-                        return {k: process_message(v) for k, v in msg.__dict__.items()}
-                    else:
-                        return str(msg)
-                except Exception as e:
-                    logger.error(f"Error processing message: {str(e)}")
-                    return {"error": str(e), "original_type": type(msg).__name__}
-
             if isinstance(response, dict):
                 processed = {k: process_message(v) for k, v in response.items()}
             elif hasattr(response, '__dict__'):
