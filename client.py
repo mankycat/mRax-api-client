@@ -105,17 +105,17 @@ class MedRAXClient:
         print(f"\n[DEBUG] Parsing AI message: {message[:200]}...")  # Log first 200 chars
         
         # First check for explicit "Impression" section
-        if "### Conclusion" in message or "### Summary" in message or "IMPRESSION:" in message:
-            impression_section = message.split("### Conclusion")[-1] if "### Conclusion" in message else message
-            impression_section = impression_section.split("### Summary")[-1] if "### Summary" in message else impression_section
-            impression_section = impression_section.split("IMPRESSION:")[-1] if "IMPRESSION:" in message else impression_section
+        # if "### Conclusion" in message or "### Summary" in message or "IMPRESSION:" in message:
+        #     impression_section = message.split("### Conclusion")[-1] if "### Conclusion" in message else message
+        #     impression_section = impression_section.split("### Summary")[-1] if "### Summary" in message else impression_section
+        #     impression_section = impression_section.split("IMPRESSION:")[-1] if "IMPRESSION:" in message else impression_section
             
-            if "no acute" in impression_section.lower() or "normal" in impression_section.lower():
-                print("[DEBUG] Found normal impression in conclusion")
-                return "Normal"
-            elif "abnormal" in impression_section.lower():
-                print("[DEBUG] Found abnormal impression in conclusion")
-                return "Abnormal"
+        #     if "no acute" in impression_section.lower() or "normal" in impression_section.lower():
+        #         print("[DEBUG] Found normal impression in conclusion")
+        #         return "Normal"
+        #     elif "abnormal" in impression_section.lower():
+        #         print("[DEBUG] Found abnormal impression in conclusion")
+        #         return "Abnormal"
         
         # Fallback to probability analysis
         if "Probability" in message or "probability" in message:
@@ -125,18 +125,18 @@ class MedRAXClient:
             if high_prob_count > 1:
                 print(f"[DEBUG] Found {high_prob_count} high probability pathologies")
                 return "Abnormal"
-            else:
-                print("[DEBUG] No significant pathologies found")
-                return "Normal"
+            # else:
+            #     print("[DEBUG] No significant pathologies found")
+            #     return "Normal"
                 
         # Final fallback to simple keyword matching
-        message_lower = message.lower()
-        if "normal" in message_lower and "abnormal" not in message_lower:
-            print("[DEBUG] Keyword match: Normal")
-            return "Normal"
-        elif "abnormal" in message_lower:
-            print("[DEBUG] Keyword match: Abnormal")
-            return "Abnormal"
+        # message_lower = message.lower()
+        # if "normal" in message_lower and "abnormal" not in message_lower:
+        #     print("[DEBUG] Keyword match: Normal")
+        #     return "Normal"
+        # elif "abnormal" in message_lower:
+        #     print("[DEBUG] Keyword match: Abnormal")
+        #     return "Abnormal"
             
         # print("[DEBUG] No clear classification found")
         # return "Unknown"
@@ -206,7 +206,7 @@ class MedRAXClient:
             # Get AI message and parse label
             ai_message = pred['result']['messages'][-1]['content']
             pred_label = self.parse_ai_message(ai_message)
-            print(f"[DEBUG] AI message snippet: {ai_message[:200]}...")
+            print(f"[DEBUG] AI message snippet: {ai_message[:500]}...")
             print(f"[DEBUG] Predicted label: {pred_label}")
             
             # Match with ground truth
@@ -219,7 +219,7 @@ class MedRAXClient:
                     'SCHE_NO': sche_no,
                     'Ground Truth': true_label,
                     'Prediction': pred_label,
-                    'AI Message': ai_message[:500] + '...' if len(ai_message) > 500 else ai_message
+                    'AI Message': ai_message
                 })
                 print(f"[DEBUG] Matched ground truth: {true_label}")
                 print(f"[DEBUG] Current y_true: {y_true}")
