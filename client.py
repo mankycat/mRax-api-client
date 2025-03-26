@@ -289,11 +289,16 @@ def main():
     health_parser = subparsers.add_parser('health')
     
     args = parser.parse_args()
-    client = MedRAXClient(
-        openai_api_key=args.openai_api_key,
-        openai_endpoint=args.openai_endpoint,
-        openai_model=args.openai_model
-    )
+    
+    # Only pass OpenAI params for batch command
+    if args.command == 'batch':
+        client = MedRAXClient(
+            openai_api_key=args.openai_api_key,
+            openai_endpoint=args.openai_endpoint,
+            openai_model=args.openai_model
+        )
+    else:
+        client = MedRAXClient()
     
     if args.command == 'single':
         result = client.send_single_image(args.image_path, args.user_message)
