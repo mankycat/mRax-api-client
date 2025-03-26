@@ -241,15 +241,76 @@ class MedRAXClient:
         plt.savefig('confusion_matrix.png')
         plt.close()
 
+        # Create detailed report with all processed files
+        full_report_data = []
+        included_count = 0
+        excluded_count = 0
+        
+        for pred in predictions:
+            filename = pred['filename']
+            full_path = Path(filename).absolute()
+            sche_no = None
+            
+            # Try to extract SCHE_NO from path
+            for part in full_path.parts:
+                if part.isdigit() and len(part) >= 8:
+                    sche_no = part
+                    break
+            
+            record = {
+                'File': filename,
+                'SCHE_NO': sche_no or 'N/A',
+                'Included_In_Matrix': 'No',
+                'Reason': 'Not processed yet',
+                'Prediction': 'N/A',
+                'Ground_Truth': 'N/A'
+            }
+            
+            if sche_no in ground_truth:
+                try:
+                    ai_message = pred['result']['messages'][-1]['content']
+                    pred_label = self.parse_ai_message(ai_message)
+                    true_label = ground_truth[sche_no]
+                    
+                    record.update({
+                        'Included_In_Matrix': 'Yes',
+                        'Reason': 'Successfully matched',
+                        'Prediction': pred_label,
+                        'Ground_Truth': true_label,
+                        'AI_Message_Snippet': ai_message[:200] + '...' if len(ai_message) > 200 else ai_message
+                    })
+                    included_count += 1
+                except Exception as e:
+                    record.update({
+                        'Reason': f'Processing error: {str(e)}',
+                        'AI_Message_Snippet': str(pred.get('result', {}).get('messages', ['N/A'])[-1])[:200] + '...'
+                    })
+                    excluded_count += 1
+            else:
+                record.update({
+                    'Reason': 'SCHE_NO not found in ground truth',
+                    'Available_SCHE_NOs': ', '.join(list(ground_truth.keys())[:3]) + ('...' if len(ground_truth) > 3 else '')
+                })
+                excluded_count += 1
+            
+            full_report_data.append(record)
+
         # Save detailed report
-        report_df = pd.DataFrame(report_data)
+        report_df = pd.DataFrame(full_report_data)
         report_df.to_excel('confusion_matrix_report.xlsx', index=False)
+        
+        print(f"\n[REPORT] Included in matrix: {included_count}")
+        print(f"[REPORT] Excluded from matrix: {excluded_count}")
+        print(f"[REPORT] Total processed: {len(predictions)}")
         
         return {
             "matrix": cm.tolist(),
             "labels": labels,
             "plot_path": "confusion_matrix.png",
-            "report_path": "confusion_matrix_report.xlsx"
+            "report_path": "confusion_matrix_report.xlsx",
+            "included_count": included_count,
+            "excluded_count": excluded_count,
+            "total_processed": len(predictions)
         }
     
     def health_check(self) -> Dict:
