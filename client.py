@@ -82,6 +82,33 @@ class MedRAXClient:
     def find_png_files(self, root_dir: str) -> List[str]:
         """Recursively find all PNG files in directory and subdirectories"""
         return glob.glob(os.path.join(root_dir, '**', '*.png'), recursive=True)
+        
+    def group_images_by_case(self, image_paths: List[str]) -> Dict[str, List[str]]:
+        """Group image paths by case number (SCHE_NO)"""
+        cases = {}
+        for path in image_paths:
+            full_path = Path(path).absolute()
+            sche_no = None
+            
+            # Extract SCHE_NO from path components
+            for part in full_path.parts:
+                if part.isdigit() and len(part) >= 8:  # SCHE_NO appears to be 11 digits
+                    sche_no = part
+                    break
+            
+            if sche_no:
+                if sche_no not in cases:
+                    cases[sche_no] = []
+                cases[sche_no].append(path)
+            else:
+                print(f"[WARNING] Could not extract SCHE_NO from: {path}")
+        
+        # Print summary of cases
+        print(f"[INFO] Found {len(cases)} cases with {sum(len(imgs) for imgs in cases.values())} images")
+        for sche_no, imgs in cases.items():
+            print(f"[INFO] Case {sche_no}: {len(imgs)} images")
+            
+        return cases
 
     def load_ground_truth(self, excel_path: str) -> Dict[str, str]:
         """Load ground truth labels from Excel file and translate to English"""
@@ -167,67 +194,169 @@ class MedRAXClient:
             print(f"OpenAI API error: {e}")
             return "Unknown"
 
+    def aggregate_case_predictions(self, case_predictions: List[Dict], voting_threshold: float = 0.5) -> str:
+        """
+        Aggregate multiple image predictions for a single case
+        
+        Args:
+            case_predictions: List of prediction dictionaries for images in the same case
+            voting_threshold: Threshold for determining case label (default: 0.5)
+            
+        Returns:
+            Final prediction label for the case ("Normal", "Abnormal", or "Unknown")
+        """
+        # Count predictions by label
+        label_counts = {"Normal": 0, "Abnormal": 0, "Unknown": 0}
+        
+        for pred in case_predictions:
+            try:
+                ai_message = pred['result']['messages'][-1]['content']
+                pred_label = self.parse_ai_message(ai_message)
+                label_counts[pred_label] += 1
+            except Exception as e:
+                print(f"[ERROR] Failed to parse prediction: {e}")
+                label_counts["Unknown"] += 1
+        
+        total_images = sum(label_counts.values())
+        
+        # If no valid predictions, return Unknown
+        if total_images == 0:
+            return "Unknown"
+            
+        # Calculate percentages
+        normal_pct = label_counts["Normal"] / total_images
+        abnormal_pct = label_counts["Abnormal"] / total_images
+        
+        # Log the voting results
+        print(f"[DEBUG] Case voting results: Normal={label_counts['Normal']} ({normal_pct:.2f}), "
+              f"Abnormal={label_counts['Abnormal']} ({abnormal_pct:.2f}), "
+              f"Unknown={label_counts['Unknown']}")
+        
+        # Determine final label based on voting
+        if abnormal_pct >= voting_threshold:
+            return "Abnormal"
+        elif normal_pct >= voting_threshold:
+            return "Normal"
+        else:
+            return "Unknown"
+    
     def calculate_confusion_matrix(self, 
                                  predictions: List[Dict], 
                                  ground_truth: Dict[str, str],
-                                 labels: Optional[List[str]] = None) -> Dict:
+                                 labels: Optional[List[str]] = None,
+                                 voting_threshold: float = 0.5) -> Dict:
         """Calculate and visualize confusion matrix with detailed Excel report"""
         print(f"\n[DEBUG] Calculating confusion matrix with {len(predictions)} predictions")
         print(f"[DEBUG] Ground truth keys: {list(ground_truth.keys())}")
         print(f"[DEBUG] Labels: {labels}")
         
-        # Extract true and predicted labels
-        y_true = []
-        y_pred = []
-        report_data = []
-        
-        for i, pred in enumerate(predictions):
+        # Group predictions by SCHE_NO
+        case_predictions = {}
+        for pred in predictions:
             filename = pred['filename']
             full_path = Path(filename).absolute()
-            path_parts = full_path.parts
-            print(f"\n[DEBUG] Processing prediction {i+1}/{len(predictions)}")
-            print(f"[DEBUG] Full path: {full_path}")
-            print(f"[DEBUG] Path parts: {path_parts}")
             
-            # Extract SCHE_NO from path components (e.g. .../11403050086/A24c5d14.png)
+            # Extract SCHE_NO from path components
             sche_no = None
-            for part in path_parts:
-                if part.isdigit() and len(part) >= 8:  # SCHE_NO appears to be 11 digits
+            for part in full_path.parts:
+                if part.isdigit() and len(part) >= 8:
                     sche_no = part
-                    print(f"[DEBUG] Extracted SCHE_NO from path: {sche_no}")
                     break
             
             if not sche_no:
                 print(f"[ERROR] Could not extract SCHE_NO from: {filename}")
                 continue
                 
-            print(f"[DEBUG] Using SCHE_NO: {sche_no}")
+            if sche_no not in case_predictions:
+                case_predictions[sche_no] = []
             
-            # Get AI message and parse label
-            ai_message = pred['result']['messages'][-1]['content']
-            pred_label = self.parse_ai_message(ai_message)
-            print(f"[DEBUG] AI message snippet: {ai_message[:500]}...")
-            print(f"[DEBUG] Predicted label: {pred_label}")
+            case_predictions[sche_no].append(pred)
+        
+        # Process each case to get aggregated predictions
+        y_true = []
+        y_pred = []
+        case_report_data = []
+        image_report_data = []
+        
+        for sche_no, preds in case_predictions.items():
+            print(f"\n[DEBUG] Processing case {sche_no} with {len(preds)} images")
             
-            # Match with ground truth
-            if sche_no in ground_truth:
-                true_label = ground_truth[sche_no]
-                y_true.append(true_label)
-                y_pred.append(pred_label)
-                report_data.append({
-                    'File': filename,
-                    'SCHE_NO': sche_no,
-                    'Ground Truth': true_label,
-                    'Prediction': pred_label,
-                    'AI Message': ai_message
-                })
-                print(f"[DEBUG] Matched ground truth: {true_label}")
-                print(f"[DEBUG] Current y_true: {y_true}")
-                print(f"[DEBUG] Current y_pred: {y_pred}")
-            else:
+            # Skip cases not in ground truth
+            if sche_no not in ground_truth:
                 print(f"[ERROR] SCHE_NO {sche_no} not found in ground truth")
                 print(f"[DEBUG] Available ground truth keys: {list(ground_truth.keys())}")
-
+                
+                # Add to image report as excluded
+                for pred in preds:
+                    image_report_data.append({
+                        'File': pred['filename'],
+                        'SCHE_NO': sche_no,
+                        'Included_In_Matrix': 'No',
+                        'Reason': 'SCHE_NO not found in ground truth',
+                        'Image_Prediction': 'N/A',
+                        'Case_Prediction': 'N/A',
+                        'Ground_Truth': 'N/A'
+                    })
+                continue
+            
+            # Get ground truth for this case
+            true_label = ground_truth[sche_no]
+            
+            # Process individual images
+            image_predictions = []
+            for pred in preds:
+                try:
+                    ai_message = pred['result']['messages'][-1]['content']
+                    image_pred = self.parse_ai_message(ai_message)
+                    
+                    image_predictions.append({
+                        'filename': pred['filename'],
+                        'prediction': image_pred,
+                        'ai_message': ai_message
+                    })
+                    
+                    # Add to image report
+                    image_report_data.append({
+                        'File': pred['filename'],
+                        'SCHE_NO': sche_no,
+                        'Included_In_Matrix': 'Yes',
+                        'Reason': 'Successfully processed',
+                        'Image_Prediction': image_pred,
+                        'Ground_Truth': true_label,
+                        'AI_Message_Snippet': ai_message[:200] + '...' if len(ai_message) > 200 else ai_message
+                    })
+                    
+                except Exception as e:
+                    print(f"[ERROR] Failed to process image {pred['filename']}: {e}")
+                    image_report_data.append({
+                        'File': pred['filename'],
+                        'SCHE_NO': sche_no,
+                        'Included_In_Matrix': 'No',
+                        'Reason': f'Processing error: {str(e)}',
+                        'Image_Prediction': 'Error',
+                        'Ground_Truth': true_label
+                    })
+            
+            # Aggregate predictions for this case
+            case_pred = self.aggregate_case_predictions(preds, voting_threshold)
+            print(f"[DEBUG] Case {sche_no} final prediction: {case_pred} (Ground truth: {true_label})")
+            
+            # Add to confusion matrix data
+            y_true.append(true_label)
+            y_pred.append(case_pred)
+            
+            # Add to case report
+            case_report_data.append({
+                'SCHE_NO': sche_no,
+                'Total_Images': len(preds),
+                'Ground_Truth': true_label,
+                'Case_Prediction': case_pred,
+                'Normal_Count': sum(1 for img in image_predictions if img['prediction'] == 'Normal'),
+                'Abnormal_Count': sum(1 for img in image_predictions if img['prediction'] == 'Abnormal'),
+                'Unknown_Count': sum(1 for img in image_predictions if img['prediction'] == 'Unknown'),
+                'Match_Ground_Truth': case_pred == true_label
+            })
+        
         # Generate confusion matrix
         cm = confusion_matrix(y_true, y_pred, labels=labels)
         
@@ -237,80 +366,31 @@ class MedRAXClient:
                    xticklabels=labels, yticklabels=labels)
         plt.xlabel('Predicted')
         plt.ylabel('Actual')
-        plt.title('Confusion Matrix')
+        plt.title('Confusion Matrix (Case Level)')
         plt.savefig('confusion_matrix.png')
         plt.close()
 
-        # Create detailed report with all processed files
-        full_report_data = []
-        included_count = 0
-        excluded_count = 0
+        # Save detailed reports
+        case_df = pd.DataFrame(case_report_data)
+        image_df = pd.DataFrame(image_report_data)
         
-        for pred in predictions:
-            filename = pred['filename']
-            full_path = Path(filename).absolute()
-            sche_no = None
-            
-            # Try to extract SCHE_NO from path
-            for part in full_path.parts:
-                if part.isdigit() and len(part) >= 8:
-                    sche_no = part
-                    break
-            
-            record = {
-                'File': filename,
-                'SCHE_NO': sche_no or 'N/A',
-                'Included_In_Matrix': 'No',
-                'Reason': 'Not processed yet',
-                'Prediction': 'N/A',
-                'Ground_Truth': 'N/A'
-            }
-            
-            if sche_no in ground_truth:
-                try:
-                    ai_message = pred['result']['messages'][-1]['content']
-                    pred_label = self.parse_ai_message(ai_message)
-                    true_label = ground_truth[sche_no]
-                    
-                    record.update({
-                        'Included_In_Matrix': 'Yes',
-                        'Reason': 'Successfully matched',
-                        'Prediction': pred_label,
-                        'Ground_Truth': true_label,
-                        'AI_Message_Snippet': ai_message[:200] + '...' if len(ai_message) > 200 else ai_message
-                    })
-                    included_count += 1
-                except Exception as e:
-                    record.update({
-                        'Reason': f'Processing error: {str(e)}',
-                        'AI_Message_Snippet': str(pred.get('result', {}).get('messages', ['N/A'])[-1])[:200] + '...'
-                    })
-                    excluded_count += 1
-            else:
-                record.update({
-                    'Reason': 'SCHE_NO not found in ground truth',
-                    'Available_SCHE_NOs': ', '.join(list(ground_truth.keys())[:3]) + ('...' if len(ground_truth) > 3 else '')
-                })
-                excluded_count += 1
-            
-            full_report_data.append(record)
-
-        # Save detailed report
-        report_df = pd.DataFrame(full_report_data)
-        report_df.to_excel('confusion_matrix_report.xlsx', index=False)
+        # Create Excel writer with multiple sheets
+        with pd.ExcelWriter('confusion_matrix_report.xlsx') as writer:
+            case_df.to_excel(writer, sheet_name='Case_Level', index=False)
+            image_df.to_excel(writer, sheet_name='Image_Level', index=False)
         
-        print(f"\n[REPORT] Included in matrix: {included_count}")
-        print(f"[REPORT] Excluded from matrix: {excluded_count}")
-        print(f"[REPORT] Total processed: {len(predictions)}")
+        # Print summary
+        print(f"\n[REPORT] Total cases: {len(case_report_data)}")
+        print(f"[REPORT] Total images: {len(image_report_data)}")
+        print(f"[REPORT] Cases matching ground truth: {sum(1 for case in case_report_data if case['Match_Ground_Truth'])}")
         
         return {
             "matrix": cm.tolist(),
             "labels": labels,
             "plot_path": "confusion_matrix.png",
             "report_path": "confusion_matrix_report.xlsx",
-            "included_count": included_count,
-            "excluded_count": excluded_count,
-            "total_processed": len(predictions)
+            "total_cases": len(case_report_data),
+            "total_images": len(image_report_data)
         }
     
     def health_check(self) -> Dict:
@@ -337,6 +417,8 @@ def main():
                             help='Excel file containing ground truth labels')
     batch_parser.add_argument('--labels', nargs='+',
                             help='Class labels for confusion matrix')
+    batch_parser.add_argument('--voting-threshold', type=float, default=0.5,
+                            help='Threshold for case-level voting (default: 0.5)')
     batch_parser.add_argument('--openai-api-key',
                             help='OpenAI API key for enhanced classification')
     batch_parser.add_argument('--openai-endpoint',
@@ -378,7 +460,9 @@ def main():
         if not image_paths:
             print("Error: No PNG files found")
             return
-            
+        
+        # No need to add voting threshold parameter here as it's already defined above
+        
         # Process batch
         result = client.send_batch_images(image_paths, args.user_message)
         print(json.dumps(result, indent=2))
@@ -397,13 +481,18 @@ def main():
                         'result': res['result']
                     })
             
+            # Get voting threshold from args or use default
+            voting_threshold = getattr(args, 'voting_threshold', 0.5)
+            
             # Calculate confusion matrix
             cm_result = client.calculate_confusion_matrix(
-                predictions, ground_truth, args.labels
+                predictions, ground_truth, args.labels, voting_threshold
             )
             print("\nConfusion Matrix Results:")
             print(f"- Matrix plot: {cm_result['plot_path']}")
             print(f"- Detailed report: {cm_result['report_path']}")
+            print(f"- Total cases: {cm_result['total_cases']}")
+            print(f"- Total images: {cm_result['total_images']}")
             
     elif args.command == 'health':
         result = client.health_check()
