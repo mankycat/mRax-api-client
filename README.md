@@ -50,16 +50,21 @@ python client.py batch path/to/images/ \
   --labels "Normal" "Abnormal" \
   --openai-api-key "your_api_key_here" \
   --openai-model "gpt-4"
+
+# Multi-image cases with case-level aggregation
+python client.py batch path/to/multi_image_cases/ --recursive \
+  --ground_truth_excel ground_truth.xlsx \
+  --labels "Normal" "Abnormal" "Unknown" \
+  --voting-threshold 0.6
 ```
 
 ### Confusion Matrix Reports
 
 When using Excel ground truth, the client will generate:
 1. `confusion_matrix.png` - Visual matrix plot
-2. `confusion_matrix_report.xlsx` - Detailed report with:
-   - File paths
-   - Ground truth labels
-   - Predicted labels
+2. `confusion_matrix_report.xlsx` - Detailed report with multiple sheets:
+   - **Case_Level**: Aggregated results for each case with voting statistics
+   - **Image_Level**: Individual image predictions with detailed information
 
 The Excel ground truth file should contain:
 - `SCHE_NO` column with image identifiers (filename stems)
@@ -128,18 +133,32 @@ When providing ground truth labels and class labels, the client will:
 1. Parse AI responses to determine Normal/Abnormal classification
    - Uses OpenAI API if --openai-api-key provided
    - Falls back to keyword matching otherwise
-2. Generate a confusion matrix
-3. Save it as `confusion_matrix.png`
-4. Return the matrix data in JSON format
+2. For multi-image cases:
+   - Group images by case number (SCHE_NO)
+   - Aggregate predictions using voting mechanism
+   - Apply voting threshold to determine final case classification
+3. Generate a confusion matrix at the case level
+4. Save it as `confusion_matrix.png`
+5. Create detailed Excel report with case and image statistics
 
 Example output:
 ```json
 {
-  "matrix": [[10, 2], [1, 12]],
-  "labels": ["Normal", "Abnormal"],
-  "plot_path": "confusion_matrix.png"
+  "matrix": [[10, 2, 0], [1, 12, 1]],
+  "labels": ["Normal", "Abnormal", "Unknown"],
+  "plot_path": "confusion_matrix.png",
+  "report_path": "confusion_matrix_report.xlsx",
+  "total_cases": 26,
+  "total_images": 342
 }
 ```
+
+### Case-Level Voting
+
+The `--voting-threshold` parameter (default: 0.5) controls how image predictions are aggregated:
+- If ≥ threshold% of images are classified as "Abnormal", the case is "Abnormal"
+- If ≥ threshold% of images are classified as "Normal", the case is "Normal"
+- Otherwise, the case is "Unknown"
 
 ## Requirements
 
