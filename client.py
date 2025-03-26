@@ -323,7 +323,7 @@ class MedRAXClient:
                         'Reason': 'Successfully processed',
                         'Image_Prediction': image_pred,
                         'Ground_Truth': true_label,
-                        'AI_Message_Snippet': ai_message[:200] + '...' if len(ai_message) > 200 else ai_message
+                        'AI_Message_Snippet': ai_message
                     })
                     
                 except Exception as e:

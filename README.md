@@ -14,7 +14,7 @@ pip install fastapi uvicorn requests scikit-learn matplotlib seaborn
 python api.py
 ```
 
-The server will run on `http://localhost:8000`
+The server will run on `http://localhost:8585`
 
 ## Client Usage
 
