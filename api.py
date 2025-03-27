@@ -75,6 +75,11 @@ agent, tools_dict = initialize_agent(
     openai_kwargs=openai_kwargs
 )
 
+# Print available tools for debugging
+logger.info("Available tools:")
+for tool_name, tool in tools_dict.items():
+    logger.info(f"Tool: {tool_name}, API Name: {getattr(tool, 'name', 'unknown')}")
+
 interface = ChatInterface(agent, tools_dict)
 
 @app.post("/inference")
