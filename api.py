@@ -51,7 +51,7 @@ selected_tools = [
     "ChestXRayClassifierTool",
     "ChestXRaySegmentationTool",
     "ChestXRayReportGeneratorTool",
-    "XRayVQATool"
+    "XRayVQATool",
     "LlavaMedTool",
     "XRayPhraseGroundingTool",
     # "ChestXRayGeneratorTool",
