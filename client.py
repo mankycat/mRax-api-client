@@ -92,7 +92,12 @@ class MedRAXClient:
             
             # Extract SCHE_NO from path components
             for part in full_path.parts:
-                if part.isdigit() and len(part) >= 8:  # SCHE_NO appears to be 11 digits
+                # Check for all-digit SCHE_NO (original format)
+                if part.isdigit() and len(part) >= 8:
+                    sche_no = part
+                    break
+                # Check for P-prefixed SCHE_NO format (e.g., P1312110476)
+                elif part.startswith('P') and part[1:].isdigit() and len(part) >= 9:
                     sche_no = part
                     break
             
@@ -259,7 +264,12 @@ class MedRAXClient:
             # Extract SCHE_NO from path components
             sche_no = None
             for part in full_path.parts:
+                # Check for all-digit SCHE_NO (original format)
                 if part.isdigit() and len(part) >= 8:
+                    sche_no = part
+                    break
+                # Check for P-prefixed SCHE_NO format (e.g., P1312110476)
+                elif part.startswith('P') and part[1:].isdigit() and len(part) >= 9:
                     sche_no = part
                     break
             
