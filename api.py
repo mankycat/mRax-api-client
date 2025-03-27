@@ -96,6 +96,24 @@ async def single_inference(file: UploadFile = File(...), user_message: str = Non
         
         # Get inference results
         messages = [{"role": "user", "content": f"image_path: {temp_path}"}]
+        
+        # Load and encode image for multimodal processing (like in the original implementation)
+        with open(temp_path, "rb") as img_file:
+            img_base64 = base64.b64encode(img_file.read()).decode("utf-8")
+        
+        # Add the image as a multimodal message
+        messages.append(
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": f"data:image/jpeg;base64,{img_base64}"}
+                    }
+                ]
+            }
+        )
+        
         if user_message:
             messages.append({"role": "user", "content": user_message})
         response = agent.workflow.invoke(
@@ -147,6 +165,24 @@ async def batch_inference(files: List[UploadFile] = File(...), user_message: str
             
             # Get inference results
             messages = [{"role": "user", "content": f"image_path: {temp_path}"}]
+            
+            # Load and encode image for multimodal processing (like in the original implementation)
+            with open(temp_path, "rb") as img_file:
+                img_base64 = base64.b64encode(img_file.read()).decode("utf-8")
+            
+            # Add the image as a multimodal message
+            messages.append(
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": f"data:image/jpeg;base64,{img_base64}"}
+                        }
+                    ]
+                }
+            )
+            
             if user_message:
                 messages.append({"role": "user", "content": user_message})
             response = agent.workflow.invoke(
