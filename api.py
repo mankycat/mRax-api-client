@@ -95,13 +95,16 @@ async def single_inference(file: UploadFile = File(...), user_message: str = Non
         display_path = interface.handle_upload(temp_path)
         
         # Get inference results
-        messages = [{"role": "user", "content": f"image_path: {temp_path}"}]
+        messages = []
         
-        # Load and encode image for multimodal processing (like in the original implementation)
+        # Send path for tools (like in the original implementation)
+        messages.append({"role": "user", "content": f"image_path: {temp_path}"})
+        
+        # Load and encode image for multimodal processing
         with open(temp_path, "rb") as img_file:
             img_base64 = base64.b64encode(img_file.read()).decode("utf-8")
         
-        # Add the image as a multimodal message
+        # Add the image as a multimodal message (exactly as in the original implementation)
         messages.append(
             {
                 "role": "user",
@@ -114,8 +117,9 @@ async def single_inference(file: UploadFile = File(...), user_message: str = Non
             }
         )
         
+        # Format user message exactly as in the original implementation
         if user_message:
-            messages.append({"role": "user", "content": user_message})
+            messages.append({"role": "user", "content": [{"type": "text", "text": user_message}]})
         response = agent.workflow.invoke(
             {"messages": messages},
             {"configurable": {"thread_id": str(time.time())}}
@@ -164,13 +168,16 @@ async def batch_inference(files: List[UploadFile] = File(...), user_message: str
             display_path = interface.handle_upload(temp_path)
             
             # Get inference results
-            messages = [{"role": "user", "content": f"image_path: {temp_path}"}]
+            messages = []
             
-            # Load and encode image for multimodal processing (like in the original implementation)
+            # Send path for tools (like in the original implementation)
+            messages.append({"role": "user", "content": f"image_path: {temp_path}"})
+            
+            # Load and encode image for multimodal processing
             with open(temp_path, "rb") as img_file:
                 img_base64 = base64.b64encode(img_file.read()).decode("utf-8")
             
-            # Add the image as a multimodal message
+            # Add the image as a multimodal message (exactly as in the original implementation)
             messages.append(
                 {
                     "role": "user",
@@ -183,8 +190,9 @@ async def batch_inference(files: List[UploadFile] = File(...), user_message: str
                 }
             )
             
+            # Format user message exactly as in the original implementation
             if user_message:
-                messages.append({"role": "user", "content": user_message})
+                messages.append({"role": "user", "content": [{"type": "text", "text": user_message}]})
             response = agent.workflow.invoke(
                 {"messages": messages},
                 {"configurable": {"thread_id": str(time.time())}}
