@@ -83,7 +83,7 @@ for tool_name, tool in tools_dict.items():
 interface = ChatInterface(agent, tools_dict)
 
 @app.post("/inference")
-async def single_inference(file: UploadFile = File(...), user_message: str = None):
+async def single_inference(file: UploadFile = File(...), user_message: str = None, force_tool: str = None):
     """Process a single medical image with optional user message"""
     try:
         # Save uploaded file temporarily
@@ -118,7 +118,18 @@ async def single_inference(file: UploadFile = File(...), user_message: str = Non
         )
         
         # Format user message exactly as in the original implementation
-        if user_message:
+        if force_tool:
+            # If force_tool is specified, add a special instruction to use that tool
+            tool_instruction = f"Please analyze this image using the {force_tool} tool."
+            if user_message:
+                # Combine the tool instruction with the user message
+                combined_message = f"{tool_instruction} {user_message}"
+                messages.append({"role": "user", "content": [{"type": "text", "text": combined_message}]})
+            else:
+                # Just use the tool instruction
+                messages.append({"role": "user", "content": [{"type": "text", "text": tool_instruction}]})
+        elif user_message:
+            # Normal case, just use the user message
             messages.append({"role": "user", "content": [{"type": "text", "text": user_message}]})
         response = agent.workflow.invoke(
             {"messages": messages},
@@ -154,7 +165,7 @@ async def single_inference(file: UploadFile = File(...), user_message: str = Non
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/batch_inference") 
-async def batch_inference(files: List[UploadFile] = File(...), user_message: str = None):
+async def batch_inference(files: List[UploadFile] = File(...), user_message: str = None, force_tool: str = None):
     """Process multiple medical images with optional user message"""
     results = []
     for file in files:
@@ -191,7 +202,18 @@ async def batch_inference(files: List[UploadFile] = File(...), user_message: str
             )
             
             # Format user message exactly as in the original implementation
-            if user_message:
+            if force_tool:
+                # If force_tool is specified, add a special instruction to use that tool
+                tool_instruction = f"Please analyze this image using the {force_tool} tool."
+                if user_message:
+                    # Combine the tool instruction with the user message
+                    combined_message = f"{tool_instruction} {user_message}"
+                    messages.append({"role": "user", "content": [{"type": "text", "text": combined_message}]})
+                else:
+                    # Just use the tool instruction
+                    messages.append({"role": "user", "content": [{"type": "text", "text": tool_instruction}]})
+            elif user_message:
+                # Normal case, just use the user message
                 messages.append({"role": "user", "content": [{"type": "text", "text": user_message}]})
             response = agent.workflow.invoke(
                 {"messages": messages},

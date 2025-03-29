@@ -20,11 +20,15 @@ class MedRAXClient:
         self.openai_endpoint = openai_endpoint
         self.openai_model = openai_model
         
-    def send_single_image(self, image_path: str, user_message: str = None) -> Dict:
-        """Send a single image for inference with optional user message"""
+    def send_single_image(self, image_path: str, user_message: str = None, force_tool: str = None) -> Dict:
+        """Send a single image for inference with optional user message and force_tool"""
         with open(image_path, 'rb') as f:
             files = {'file': (Path(image_path).name, f)}
-            data = {'user_message': user_message} if user_message else None
+            data = {}
+            if user_message:
+                data['user_message'] = user_message
+            if force_tool:
+                data['force_tool'] = force_tool
             try:
                 response = requests.post(f"{self.base_url}/inference", files=files, data=data)
                 response.raise_for_status()
@@ -37,8 +41,8 @@ class MedRAXClient:
                     "filename": image_path
                 }
     
-    def send_batch_images(self, image_paths: List[str], user_message: str = None) -> Dict:
-        """Send multiple images for batch inference with optional user message"""
+    def send_batch_images(self, image_paths: List[str], user_message: str = None, force_tool: str = None) -> Dict:
+        """Send multiple images for batch inference with optional user message and force_tool"""
         results = []
         temp_files = []
         
@@ -61,7 +65,11 @@ class MedRAXClient:
                 return {"status": "failed", "results": results}
                 
             # Make the request with all file contents
-            data = {'user_message': user_message} if user_message else None
+            data = {}
+            if user_message:
+                data['user_message'] = user_message
+            if force_tool:
+                data['force_tool'] = force_tool
             response = requests.post(f"{self.base_url}/batch_inference", files=temp_files, data=data)
             response.raise_for_status()
             batch_result = response.json()
@@ -416,6 +424,7 @@ def main():
     single_parser = subparsers.add_parser('single')
     single_parser.add_argument('image_path', help='Path to image file')
     single_parser.add_argument('--user-message', help='Optional message to include with the image')
+    single_parser.add_argument('--force-tool', help='Force the use of a specific tool (e.g., llava_med_qa)')
     
     # Batch images parser
     batch_parser = subparsers.add_parser('batch')
@@ -423,6 +432,7 @@ def main():
     batch_parser.add_argument('--recursive', action='store_true', 
                             help='Recursively scan directory for PNG files')
     batch_parser.add_argument('--user-message', help='Optional message to include with all images')
+    batch_parser.add_argument('--force-tool', help='Force the use of a specific tool (e.g., llava_med_qa)')
     batch_parser.add_argument('--ground_truth_excel', 
                             help='Excel file containing ground truth labels')
     batch_parser.add_argument('--labels', nargs='+',
@@ -454,7 +464,7 @@ def main():
         client = MedRAXClient()
     
     if args.command == 'single':
-        result = client.send_single_image(args.image_path, args.user_message)
+        result = client.send_single_image(args.image_path, args.user_message, args.force_tool)
         print(json.dumps(result, indent=2))
         
     elif args.command == 'batch':
@@ -474,7 +484,7 @@ def main():
         # No need to add voting threshold parameter here as it's already defined above
         
         # Process batch
-        result = client.send_batch_images(image_paths, args.user_message)
+        result = client.send_batch_images(image_paths, args.user_message, args.force_tool)
         print(json.dumps(result, indent=2))
         
         # Handle confusion matrix if requested
