@@ -163,11 +163,35 @@ async def single_inference(
                     tool_response = tool_to_force.run(tool_input) 
                     logger.info(f"Direct tool response type: {type(tool_response)}")
                     
-                    # Process the direct tool response
-                    processed = process_message({"tool_output": tool_response}) # Wrap in a dict for consistency?
+                    # Extract the main answer string if the tool returns a tuple (answer, metadata)
+                    answer_string = ""
+                    if isinstance(tool_response, tuple) and len(tool_response) > 0:
+                        # Assume the first element is the main textual response
+                        answer_string = str(tool_response[0])
+                        logger.info(f"Extracted answer string from tuple: {answer_string[:100]}...")
+                    elif isinstance(tool_response, str):
+                        answer_string = tool_response
+                        logger.info(f"Tool response is already a string: {answer_string[:100]}...")
+                    else:
+                        # Fallback if the format is unexpected
+                        answer_string = str(tool_response)
+                        logger.warning(f"Unexpected tool response type {type(tool_response)}, converting to string.")
+
+                    # Format the response to mimic the agent's output structure expected by the client
+                    processed = {
+                        "messages": [
+                            # We might need to add placeholder user messages if the client expects them,
+                            # but let's start with just the assistant message.
+                            {
+                                "role": "assistant", # Or could be 'ai', check client if specific role matters
+                                "content": answer_string
+                            }
+                        ]
+                    }
+                    logger.info(f"Formatted processed response for client: {processed}")
 
                 except Exception as tool_error:
-                    logger.error(f"Error directly invoking tool {force_tool}: {str(tool_error)}")
+                    logger.error(f"Error directly invoking tool {force_tool}: {str(tool_error)}", exc_info=True)
                     raise HTTPException(status_code=500, detail=f"Error executing forced tool: {str(tool_error)}")
                 finally:
                     # Clean up temp file even if tool fails
@@ -306,11 +330,31 @@ async def batch_inference(
                         tool_response = tool_to_force.run(tool_input)
                         logger.info(f"Batch: Direct tool response type: {type(tool_response)}")
                         
-                        # Process the direct tool response
-                        processed = process_message({"tool_output": tool_response})
+                        # Extract the main answer string if the tool returns a tuple (answer, metadata)
+                        answer_string = ""
+                        if isinstance(tool_response, tuple) and len(tool_response) > 0:
+                            answer_string = str(tool_response[0])
+                            logger.info(f"Batch: Extracted answer string from tuple: {answer_string[:100]}...")
+                        elif isinstance(tool_response, str):
+                            answer_string = tool_response
+                            logger.info(f"Batch: Tool response is already a string: {answer_string[:100]}...")
+                        else:
+                            answer_string = str(tool_response)
+                            logger.warning(f"Batch: Unexpected tool response type {type(tool_response)}, converting to string.")
+
+                        # Format the response to mimic the agent's output structure
+                        processed = {
+                            "messages": [
+                                {
+                                    "role": "assistant",
+                                    "content": answer_string
+                                }
+                            ]
+                        }
+                        logger.info(f"Batch: Formatted processed response for client: {processed}")
 
                     except Exception as tool_error:
-                        logger.error(f"Batch: Error directly invoking tool {force_tool} for {file.filename}: {str(tool_error)}")
+                        logger.error(f"Batch: Error directly invoking tool {force_tool} for {file.filename}: {str(tool_error)}", exc_info=True)
                         # Store error for this specific file
                         processed = {"error": f"Error executing forced tool: {str(tool_error)}"}
                     # No finally block for unlink here, it's handled after the if/else block
