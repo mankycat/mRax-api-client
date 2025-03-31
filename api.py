@@ -151,9 +151,10 @@ async def single_inference(
             if tool_to_force:
                 try:
                     # Prepare input for the tool - adjust this based on actual tool needs
+                    # The error log indicates LlavaMedTool expects 'question', not 'query'.
                     tool_input = {"image_path": temp_path}
                     if user_message:
-                        tool_input["query"] = user_message
+                        tool_input["question"] = user_message # Changed 'query' to 'question'
                     
                     logger.info(f"Invoking tool '{force_tool}' directly with input: {tool_input}")
                     # Assuming tools have a standard 'run' method. Adjust if needed (_run, _arun, etc.)
@@ -296,9 +297,10 @@ async def batch_inference(
                 if tool_to_force:
                     try:
                         # Prepare input for the tool
+                        # The error log indicates LlavaMedTool expects 'question', not 'query'.
                         tool_input = {"image_path": temp_path}
                         if user_message:
-                            tool_input["query"] = user_message
+                            tool_input["question"] = user_message # Changed 'query' to 'question'
                         
                         logger.info(f"Batch: Invoking tool '{force_tool}' directly with input: {tool_input}")
                         tool_response = tool_to_force.run(tool_input)
