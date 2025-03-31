@@ -29,6 +29,10 @@ class MedRAXClient:
                 data['user_message'] = user_message
             if force_tool:
                 data['force_tool'] = force_tool
+            
+            # Debug print
+            print(f"[DEBUG] Sending request with data: {data}")
+            
             try:
                 response = requests.post(f"{self.base_url}/inference", files=files, data=data)
                 response.raise_for_status()

@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.responses import JSONResponse
 from typing import List
 import base64
@@ -83,7 +83,11 @@ for tool_name, tool in tools_dict.items():
 interface = ChatInterface(agent, tools_dict)
 
 @app.post("/inference")
-async def single_inference(file: UploadFile = File(...), user_message: str = None, force_tool: str = None):
+async def single_inference(
+    file: UploadFile = File(...), 
+    user_message: str = Form(None), 
+    force_tool: str = Form(None)
+):
     """Process a single medical image with optional user message"""
     try:
         # Save uploaded file temporarily
@@ -93,6 +97,9 @@ async def single_inference(file: UploadFile = File(...), user_message: str = Non
         
         # Process through interface
         display_path = interface.handle_upload(temp_path)
+        
+        # Log received parameters for debugging
+        logger.info(f"Received parameters: file={file.filename}, user_message={user_message}, force_tool={force_tool}")
         
         # Get inference results
         messages = []
@@ -131,6 +138,9 @@ async def single_inference(file: UploadFile = File(...), user_message: str = Non
         elif user_message:
             # Normal case, just use the user message
             messages.append({"role": "user", "content": [{"type": "text", "text": user_message}]})
+        
+        # Log the final messages array for debugging
+        logger.info(f"Request messages: {messages}")
         response = agent.workflow.invoke(
             {"messages": messages},
             {"configurable": {"thread_id": str(time.time())}}
@@ -165,7 +175,11 @@ async def single_inference(file: UploadFile = File(...), user_message: str = Non
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/batch_inference") 
-async def batch_inference(files: List[UploadFile] = File(...), user_message: str = None, force_tool: str = None):
+async def batch_inference(
+    files: List[UploadFile] = File(...), 
+    user_message: str = Form(None), 
+    force_tool: str = Form(None)
+):
     """Process multiple medical images with optional user message"""
     results = []
     for file in files:
@@ -177,6 +191,9 @@ async def batch_inference(files: List[UploadFile] = File(...), user_message: str
             
             # Process through interface
             display_path = interface.handle_upload(temp_path)
+            
+            # Log received parameters for batch processing
+            logger.info(f"Batch processing: file={file.filename}, user_message={user_message}, force_tool={force_tool}")
             
             # Get inference results
             messages = []
@@ -215,6 +232,9 @@ async def batch_inference(files: List[UploadFile] = File(...), user_message: str
             elif user_message:
                 # Normal case, just use the user message
                 messages.append({"role": "user", "content": [{"type": "text", "text": user_message}]})
+            # Log the final messages array for batch processing
+            logger.info(f"Batch request messages: {messages}")
+            
             response = agent.workflow.invoke(
                 {"messages": messages},
                 {"configurable": {"thread_id": str(time.time())}}
