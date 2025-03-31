@@ -141,38 +141,90 @@ async def single_inference(
         
         # Log the final messages array for debugging
         logger.info(f"Request messages: {messages}")
-        response = agent.workflow.invoke(
-            {"messages": messages},
-            {"configurable": {"thread_id": str(time.time())}}
-        )
-        
-        # Clean up
-        Path(temp_path).unlink()
-        
-        try:
-            logger.info(f"Response type: {type(response)}")
-            logger.info(f"Response attributes: {dir(response)}")
-            
-            if isinstance(response, dict):
-                processed = {k: process_message(v) for k, v in response.items()}
-            elif hasattr(response, '__dict__'):
-                processed = process_message(response)
-            else:
-                processed = str(response)
 
-            logger.info(f"Processed response: {processed}")
-            return JSONResponse({
-                "status": "success",
-                "result": processed,
-                "display_image": display_path
-            })
+        response = None
+        processed = None
+
+        if force_tool:
+            logger.info(f"Attempting to force tool: {force_tool}")
+            tool_to_force = tools_dict.get(force_tool)
+            if tool_to_force:
+                try:
+                    # Prepare input for the tool - adjust this based on actual tool needs
+                    tool_input = {"image_path": temp_path}
+                    if user_message:
+                        tool_input["query"] = user_message
+                    
+                    logger.info(f"Invoking tool '{force_tool}' directly with input: {tool_input}")
+                    # Assuming tools have a standard 'run' method. Adjust if needed (_run, _arun, etc.)
+                    # We might need to run this synchronously if the tool doesn't support async
+                    # For simplicity, let's assume a synchronous run method exists
+                    tool_response = tool_to_force.run(tool_input) 
+                    logger.info(f"Direct tool response type: {type(tool_response)}")
+                    
+                    # Process the direct tool response
+                    processed = process_message({"tool_output": tool_response}) # Wrap in a dict for consistency?
+
+                except Exception as tool_error:
+                    logger.error(f"Error directly invoking tool {force_tool}: {str(tool_error)}")
+                    raise HTTPException(status_code=500, detail=f"Error executing forced tool: {str(tool_error)}")
+                finally:
+                    # Clean up temp file even if tool fails
+                    Path(temp_path).unlink()
+            else:
+                Path(temp_path).unlink() # Clean up before raising error
+                logger.error(f"Invalid force_tool specified: {force_tool}. Available tools: {list(tools_dict.keys())}")
+                raise HTTPException(status_code=400, detail=f"Invalid force_tool specified: {force_tool}")
+        else:
+            # Original workflow using the agent
+            response = agent.workflow.invoke(
+                {"messages": messages},
+                {"configurable": {"thread_id": str(time.time())}}
+            )
+            # Clean up temp file after agent invocation
+            Path(temp_path).unlink()
             
-        except Exception as e:
-            logger.error(f"Error processing response: {str(e)}")
-            raise HTTPException(status_code=500, detail=str(e))
-        
+            # Process agent response if not already processed by tool forcing
+            if response:
+                 try:
+                    logger.info(f"Agent response type: {type(response)}")
+                    logger.info(f"Agent response attributes: {dir(response)}")
+                    
+                    if isinstance(response, dict):
+                        processed = {k: process_message(v) for k, v in response.items()}
+                    elif hasattr(response, '__dict__'):
+                        processed = process_message(response)
+                    else:
+                        processed = str(response)
+                 except Exception as e:
+                    logger.error(f"Error processing agent response: {str(e)}")
+                    # Don't raise here, let the outer try-except handle it if needed
+                    processed = {"error": f"Response processing error: {str(e)}"}
+
+
+        # Ensure 'processed' is not None before returning
+        if processed is None:
+             # This case should ideally not happen if logic is correct, but as a safeguard:
+             logger.error("Response processing failed, 'processed' is None.")
+             raise HTTPException(status_code=500, detail="Internal server error: Failed to process response.")
+
+        # The 'processed' variable now holds the result from either the forced tool or the agent workflow.
+        logger.info(f"Final processed response: {processed}")
+        return JSONResponse({
+            "status": "success",
+                "result": processed,
+                "display_image": display_path # display_path is generated before the if/else
+            })
+
+    except HTTPException as http_exc:
+        # Re-raise HTTPExceptions to return proper status codes
+        raise http_exc
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Unhandled error in single_inference: {str(e)}", exc_info=True)
+        # Ensure temp file is cleaned up in case of unexpected error before unlink
+        if 'temp_path' in locals() and Path(temp_path).exists():
+             Path(temp_path).unlink()
+        raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")
 
 @app.post("/batch_inference") 
 async def batch_inference(
@@ -234,45 +286,83 @@ async def batch_inference(
                 messages.append({"role": "user", "content": [{"type": "text", "text": user_message}]})
             # Log the final messages array for batch processing
             logger.info(f"Batch request messages: {messages}")
-            
-            response = agent.workflow.invoke(
-                {"messages": messages},
-                {"configurable": {"thread_id": str(time.time())}}
-            )
-            
-            try:
-                logger.info(f"Batch response type: {type(response)}")
-                logger.info(f"Batch response attributes: {dir(response)}")
-                
-                if isinstance(response, dict):
-                    processed = {k: process_message(v) for k, v in response.items()}
-                elif hasattr(response, '__dict__'):
-                    processed = process_message(response)
-                else:
-                    processed = str(response)
 
-                logger.info(f"Processed batch response: {processed}")
-                results.append({
-                    "filename": file.filename,
-                    "result": processed,
-                    "display_image": display_path
-                })
-                
-            except Exception as e:
-                logger.error(f"Error processing batch response: {str(e)}")
-                results.append({
-                    "filename": file.filename,
-                    "error": f"Response processing error: {str(e)}"
-                })
-            
-            # Clean up
-            Path(temp_path).unlink()
-            
-        except Exception as e:
+            response = None
+            processed = None
+
+            if force_tool:
+                logger.info(f"Batch: Attempting to force tool: {force_tool}")
+                tool_to_force = tools_dict.get(force_tool)
+                if tool_to_force:
+                    try:
+                        # Prepare input for the tool
+                        tool_input = {"image_path": temp_path}
+                        if user_message:
+                            tool_input["query"] = user_message
+                        
+                        logger.info(f"Batch: Invoking tool '{force_tool}' directly with input: {tool_input}")
+                        tool_response = tool_to_force.run(tool_input)
+                        logger.info(f"Batch: Direct tool response type: {type(tool_response)}")
+                        
+                        # Process the direct tool response
+                        processed = process_message({"tool_output": tool_response})
+
+                    except Exception as tool_error:
+                        logger.error(f"Batch: Error directly invoking tool {force_tool} for {file.filename}: {str(tool_error)}")
+                        # Store error for this specific file
+                        processed = {"error": f"Error executing forced tool: {str(tool_error)}"}
+                    # No finally block for unlink here, it's handled after the if/else block
+                else:
+                    logger.error(f"Batch: Invalid force_tool specified: {force_tool} for {file.filename}. Available tools: {list(tools_dict.keys())}")
+                    # Store error for this specific file
+                    processed = {"error": f"Invalid force_tool specified: {force_tool}"}
+            else:
+                 # Original workflow using the agent
+                response = agent.workflow.invoke(
+                    {"messages": messages},
+                    {"configurable": {"thread_id": str(time.time())}}
+                )
+                # Process agent response if not already processed by tool forcing
+                if response:
+                    try:
+                        logger.info(f"Batch agent response type: {type(response)}")
+                        logger.info(f"Batch agent response attributes: {dir(response)}")
+                        # Process the response *inside* the try block
+                        if isinstance(response, dict):
+                            processed = {k: process_message(v) for k, v in response.items()}
+                        elif hasattr(response, '__dict__'):
+                            processed = process_message(response)
+                        else:
+                            processed = str(response)
+                    except Exception as e:
+                        logger.error(f"Batch: Error processing agent response for {file.filename}: {str(e)}")
+                        processed = {"error": f"Response processing error: {str(e)}"}
+
+            # Ensure 'processed' is not None before appending results
+            if processed is None:
+                logger.error(f"Batch: Response processing failed for {file.filename}, 'processed' is None.")
+                processed = {"error": "Internal server error: Failed to process response."}
+
+
+            logger.info(f"Processed batch response for {file.filename}: {processed}")
             results.append({
                 "filename": file.filename,
-                "error": str(e)
+                "result": processed,
+                "display_image": display_path
             })
+
+            # Clean up temp file regardless of success/failure within the loop iteration
+            Path(temp_path).unlink()
+
+        except Exception as e:
+            logger.error(f"Error processing file {file.filename} in batch: {str(e)}", exc_info=True)
+            results.append({
+                "filename": file.filename,
+                "error": f"Processing error: {str(e)}"
+            })
+            # Ensure temp file is cleaned up if error occurred before unlink
+            if 'temp_path' in locals() and Path(temp_path).exists():
+                Path(temp_path).unlink()
     
     return JSONResponse({
         "status": "completed",
